@@ -29,6 +29,7 @@
 - 结构化输出解析：支持 JSON / JSON 数组 / JSONL / `===RESULT_JSON===` / Markdown JSON code block，并会继续尝试从事件 envelope 中提取最终结构化内容
 - YAML / JSON 配置与 `zod` 校验
 - 本地 CLI 入口：`list` / `config` / `detect` / `doctor` / `status` / `sweep` / `route` / `prompt` / `history` / `inspect` / `artifacts` / `prune-artifacts` / `retention` / `apply-retention` / `export-task` / `preflight` / `validate` / `batch` / `retry` / `rerun` / `run`
+- 本地 Web 前端：Workflow Studio，可在浏览器中拖拽编排 agent workflow 并填写参数
 - 基础单元测试，包含 `child_process.spawn` mock
 
 ## 目录结构
@@ -194,6 +195,56 @@ node .\dist\cli\index.js run --task fix --input-file .\demo\bug.txt --cwd . --ag
 node .\dist\cli\index.js run --task summarize --input-file .\demo\issue.txt --cwd . --dry-run --json
 node .\dist\cli\index.js run --task-file .\demo\summarize.task.yaml --dry-run --json
 ```
+
+## Web 前端：Workflow Studio
+
+构建后可以启动本地 Web 前端，通过浏览器可视化拖拽编排 agent 工作流。
+
+```powershell
+npm run build
+npm run web -- --port 4317
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:4317
+```
+
+默认只监听 `127.0.0.1`，避免无意暴露到局域网。需要修改监听地址时可以显式指定：
+
+```powershell
+npm run web -- --host 0.0.0.0 --port 4317
+```
+
+前端当前支持：
+
+- 从左侧 palette 拖拽 `Task` / `Agent` / `Fallback` 节点到画布
+- 拖拽画布中的节点调整位置
+- 开启“连接模式”后，依次点击两个节点建立边
+- 点击节点后，在右侧参数面板填写：
+  - task type
+  - title
+  - cwd
+  - preferred agent
+  - fallback agents
+  - timeout
+  - prompt
+  - agent name
+- 点击“预览工作流”调用 `POST /api/workflows/preview`，把可视图转换为标准 `Task` 预览
+- 点击“Dry-run 当前任务”调用 `POST /api/run`，通过既有 Orchestrator 做 dry-run，返回路由、命令和 artifact 信息
+- 点击“探测 Agents”调用 `GET /api/detect`
+
+后端 API：
+
+- `GET /api/health`
+- `GET /api/agents`
+- `GET /api/routes`
+- `GET /api/detect?agent=codex`
+- `POST /api/workflows/preview`
+- `POST /api/run`
+
+注意：第一版前端采用零额外框架的 HTML/CSS/JS，方便 Windows 本地直接构建运行；后续如果交互复杂度继续上升，可以再引入 React/Vite。
 
 ## 配置说明
 

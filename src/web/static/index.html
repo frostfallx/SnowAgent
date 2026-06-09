@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SnowAgent Workflow Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>SnowAgent Workflow Studio</h1>
+        <p>拖拽编排本地 Agent CLI 工作流，填写任务参数，并进行 dry-run 预览。</p>
+      </div>
+      <div class="status" id="status">connecting...</div>
+    </header>
+
+    <main class="layout">
+      <aside class="palette">
+        <h2>节点</h2>
+        <button class="palette-item" draggable="true" data-node-type="task">Task 节点</button>
+        <button class="palette-item" draggable="true" data-node-type="agent">Agent 节点</button>
+        <button class="palette-item" draggable="true" data-node-type="fallback">Fallback 节点</button>
+
+        <h2>操作</h2>
+        <button id="connectMode">连接模式：关闭</button>
+        <button id="previewWorkflow">预览工作流</button>
+        <button id="dryRunTask">Dry-run 当前任务</button>
+        <button id="detectAgents">探测 Agents</button>
+      </aside>
+
+      <section class="canvas-wrap">
+        <div class="canvas-toolbar">
+          <span>画布：拖拽节点移动；连接模式下依次点击两个节点建立边。</span>
+        </div>
+        <div id="canvas" class="canvas">
+          <svg id="edges" class="edges"></svg>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <h2>参数</h2>
+        <div id="inspectorEmpty">请选择一个节点。</div>
+        <form id="nodeForm" class="hidden">
+          <label>
+            Label
+            <input name="label" />
+          </label>
+
+          <div id="taskFields" class="field-group hidden">
+            <label>
+              Task Type
+              <select name="taskType">
+                <option value="summarize">summarize</option>
+                <option value="review">review</option>
+                <option value="fix">fix</option>
+                <option value="plan">plan</option>
+              </select>
+            </label>
+            <label>
+              Title
+              <input name="title" />
+            </label>
+            <label>
+              CWD
+              <input name="cwd" value="." />
+            </label>
+            <label>
+              Preferred Agent
+              <select name="preferredAgent">
+                <option value="auto">auto</option>
+                <option value="codex">codex</option>
+                <option value="copilot">copilot</option>
+                <option value="qwen">qwen</option>
+              </select>
+            </label>
+            <label>
+              Fallback Agents（逗号分隔）
+              <input name="fallbackAgents" placeholder="qwen,copilot" />
+            </label>
+            <label>
+              Timeout Ms
+              <input name="timeoutMs" type="number" min="1000" step="1000" />
+            </label>
+            <label>
+              Prompt
+              <textarea name="prompt" rows="8"></textarea>
+            </label>
+          </div>
+
+          <div id="agentFields" class="field-group hidden">
+            <label>
+              Agent
+              <select name="agentName">
+                <option value="codex">codex</option>
+                <option value="copilot">copilot</option>
+                <option value="qwen">qwen</option>
+              </select>
+            </label>
+          </div>
+
+          <button type="submit">保存参数</button>
+        </form>
+
+        <h2>输出</h2>
+        <pre id="output"></pre>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

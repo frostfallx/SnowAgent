@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/index.js",
+    "web": "node dist/web/server.js",
     "test": "vitest run --environment node",
     "test:watch": "vitest --environment node"
   },
