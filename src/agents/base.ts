@@ -14,7 +14,7 @@ import {
   ProcessRunner
 } from "../process/process-runner";
 import { AppConfig, AgentConfig } from "../config/schema";
-import { resolveExecutable } from "../utils/detect";
+import { inferDetectedInputModes, resolveExecutable } from "../utils/detect";
 import { Logger } from "../utils/logger";
 import { createPromptTempFile } from "../utils/temp";
 
@@ -204,12 +204,23 @@ export abstract class ConfigurableCliAgentAdapter implements AgentAdapter {
     const versionText = await this.tryProbe("version", executable, notes);
     const helpText = await this.tryProbe("help", executable, notes);
 
+    const detectedInputModes = inferDetectedInputModes(
+      helpText,
+      this.getDeclaredInputModes(),
+      this.capabilities
+    );
+    if (detectedInputModes.join(",") !== this.getDeclaredInputModes().join(",")) {
+      notes.push(
+        `Inferred input modes from help text: ${detectedInputModes.join(", ") || "none"}`
+      );
+    }
+
     const detection: AgentDetectionResult = {
       available: true,
       executable,
       versionText,
       helpText,
-      detectedInputModes: this.getDeclaredInputModes(),
+      detectedInputModes,
       notes
     };
 

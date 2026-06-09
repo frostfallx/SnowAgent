@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import type { AgentCapability, InputMode } from "../agents/base";
+
 function isExecutableFile(candidatePath: string): boolean {
   try {
     const stats = fs.statSync(candidatePath);
@@ -58,4 +60,81 @@ export function resolveExecutable(
   }
 
   return undefined;
+}
+
+function addMode(
+  modes: Set<InputMode>,
+  mode: InputMode,
+  capabilities: AgentCapability
+): void {
+  if (mode === "stdin" && capabilities.supportsStdin) {
+    modes.add(mode);
+  }
+  if (mode === "file" && capabilities.supportsPromptFile) {
+    modes.add(mode);
+  }
+  if (mode === "args" && capabilities.supportsArgs) {
+    modes.add(mode);
+  }
+}
+
+function orderInputModes(modes: Set<InputMode>, preferredOrder: InputMode[]): InputMode[] {
+  const canonicalOrder: InputMode[] = ["stdin", "file", "args"];
+  const ordered: InputMode[] = [];
+
+  for (const mode of [...preferredOrder, ...canonicalOrder]) {
+    if (modes.has(mode) && !ordered.includes(mode)) {
+      ordered.push(mode);
+    }
+  }
+
+  return ordered;
+}
+
+export function inferDetectedInputModes(
+  helpText: string | undefined,
+  declaredInputModes: InputMode[],
+  capabilities: AgentCapability
+): InputMode[] {
+  const inferred = new Set<InputMode>();
+  const normalizedHelp = (helpText ?? "").toLowerCase();
+
+  if (normalizedHelp) {
+    if (
+      /\bstdin\b/u.test(normalizedHelp) ||
+      normalizedHelp.includes("standard input") ||
+      normalizedHelp.includes("read from stdin") ||
+      normalizedHelp.includes("read from standard input") ||
+      normalizedHelp.includes("instructions are read from stdin")
+    ) {
+      addMode(inferred, "stdin", capabilities);
+    }
+
+    if (
+      normalizedHelp.includes("prompt-file") ||
+      normalizedHelp.includes("prompt file") ||
+      normalizedHelp.includes("prompt_file") ||
+      normalizedHelp.includes("@file") ||
+      /(?:^|[\s,])--(?:prompt-)?file\b/u.test(normalizedHelp) ||
+      /(?:^|[\s,])-f,?\s+--file\b/u.test(normalizedHelp)
+    ) {
+      addMode(inferred, "file", capabilities);
+    }
+
+    if (
+      normalizedHelp.includes("positionals:") ||
+      normalizedHelp.includes("arguments:") ||
+      /\[[a-z_-]*prompt[a-z_-]*\]/u.test(normalizedHelp) ||
+      /(?:^|[\s,])-p,?\s+--prompt(?:\s|=|$)/u.test(normalizedHelp) ||
+      /(?:^|[\s,])--prompt(?:\s|=|$)/u.test(normalizedHelp)
+    ) {
+      addMode(inferred, "args", capabilities);
+    }
+  }
+
+  if (inferred.size > 0) {
+    return orderInputModes(inferred, declaredInputModes);
+  }
+
+  return declaredInputModes;
 }

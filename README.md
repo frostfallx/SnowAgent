@@ -340,6 +340,7 @@ node .\dist\cli\index.js detect --json
 - `executablePath`
 - `detect.versionArgs`
 - `detect.helpArgs`
+- `detectedInputModes`：会先根据 help 文本中的 `stdin`、`--prompt`、`[PROMPT]`、`--prompt-file` 等线索推断真实可用输入方式；如果 help 没有足够信息，则回退到 adapter/config 声明的输入模式
 - `artifacts/session-*.log`
 
 如果探测失败，通常先在 PowerShell 里手工验证：
@@ -871,7 +872,7 @@ npm test
 
 ## 当前限制
 
-- 还不能自动推断每个第三方 CLI 的真实 prompt 参数，只能探测 executable 和帮助信息
+- 可以从 help 文本中保守推断 `stdin`、prompt 参数、prompt file 等输入模式，但仍不能保证每个第三方 CLI 的真实 prompt 参数组合都正确
 - 这版虽然对本机 `codex/copilot/qwen` 做了帮助文本校准，但仍不保证你的其他机器使用完全相同的参数组合
 - 某些 CLI 若只能通过 shell alias 调用，而不是实际 `.exe/.cmd` 文件，当前 PATH 探测可能识别不到
 - 对 `.cmd/.bat` 做了包装，但复杂 quoting 仍建议优先走 `stdin` 或 prompt file
