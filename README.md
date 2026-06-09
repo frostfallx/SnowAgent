@@ -327,10 +327,11 @@ node .\dist\cli\index.js list --json
 
 ### `detect`
 
-探测当前配置下每个 agent 是否可用。
+探测当前配置下每个 agent 是否可用。使用 `--agent <name>` 可以只探测单个 agent，适合调试某个 CLI 的 PATH、help/version 参数或认证问题。
 
 ```powershell
 node .\dist\cli\index.js detect
+node .\dist\cli\index.js detect --agent codex
 node .\dist\cli\index.js detect --json
 ```
 

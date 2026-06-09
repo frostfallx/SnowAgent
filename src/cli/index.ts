@@ -855,21 +855,26 @@ program
   .description("Probe configured agent CLIs from PATH or configured executable paths.")
   .option("-c, --config <path>", "Path to a JSON/YAML config file.")
   .option("--cwd <path>", "Base working directory.", process.cwd())
+  .option("--agent <name>", `Limit detection to one agent: ${AGENT_NAMES.join(", ")}`)
   .option("--json", "Print JSON output.")
-  .action(async (options: { config?: string; cwd: string; json?: boolean }) => {
+  .action(async (options: { config?: string; cwd: string; agent?: string; json?: boolean }) => {
     const context = createContext(
       options.config,
       path.resolve(options.cwd),
       Boolean(options.json)
     );
-    const result = await context.registry.detectAll();
+    const agentNames = options.agent ? [parseAgentName(options.agent)] : undefined;
+    const result = await context.registry.detect(agentNames);
     if (options.json) {
       printJson(result);
       return;
     }
 
-    for (const agentName of AGENT_NAMES) {
+    for (const agentName of agentNames ?? AGENT_NAMES) {
       const detection = result[agentName];
+      if (!detection) {
+        continue;
+      }
       console.log(`${agentName}: ${detection.available ? "available" : "unavailable"}`);
       if (detection.executable) {
         console.log(`  executable: ${detection.executable}`);

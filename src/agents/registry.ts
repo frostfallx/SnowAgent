@@ -62,13 +62,13 @@ export class AgentRegistry {
     }));
   }
 
-  public async detectAll(): Promise<Record<AgentName, Awaited<ReturnType<AgentAdapter["detect"]>>>> {
-    const results = {} as Record<
-      AgentName,
-      Awaited<ReturnType<AgentAdapter["detect"]>>
-    >;
+  public async detect(
+    agentNames?: AgentName[]
+  ): Promise<Partial<Record<AgentName, Awaited<ReturnType<AgentAdapter["detect"]>>>>> {
+    const results: Partial<Record<AgentName, Awaited<ReturnType<AgentAdapter["detect"]>>>> = {};
+    const selectedNames = agentNames ?? (Object.keys(AGENT_FACTORIES) as AgentName[]);
 
-    for (const name of Object.keys(AGENT_FACTORIES) as AgentName[]) {
+    for (const name of selectedNames) {
       const adapter = this.get(name);
       results[name] = adapter
         ? await adapter.detect()
@@ -81,6 +81,10 @@ export class AgentRegistry {
     }
 
     return results;
+  }
+
+  public async detectAll(): Promise<Record<AgentName, Awaited<ReturnType<AgentAdapter["detect"]>>>> {
+    return this.detect() as Promise<Record<AgentName, Awaited<ReturnType<AgentAdapter["detect"]>>>>;
   }
 }
 
