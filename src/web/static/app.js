@@ -9,6 +9,9 @@ const agentFields = document.getElementById("agentFields");
 const connectModeButton = document.getElementById("connectMode");
 const saveWorkflowButton = document.getElementById("saveWorkflow");
 const loadWorkflowButton = document.getElementById("loadWorkflow");
+const exportWorkflowButton = document.getElementById("exportWorkflow");
+const importWorkflowButton = document.getElementById("importWorkflow");
+const importFileInput = document.getElementById("importFileInput");
 const workflowListEl = document.getElementById("workflowList");
 
 const graph = {
@@ -482,6 +485,47 @@ async function listWorkflows() {
 
 document.getElementById("loadWorkflow").addEventListener("click", () => {
   listWorkflows();
+});
+
+document.getElementById("exportWorkflow").addEventListener("click", () => {
+  const dataStr = JSON.stringify(graph, null, 2);
+  const blob = new Blob([dataStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${graph.name || "workflow"}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  print("Workflow exported");
+});
+
+document.getElementById("importWorkflow").addEventListener("click", () => {
+  importFileInput.click();
+});
+
+importFileInput.addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    if (imported.nodes && Array.isArray(imported.nodes)) {
+      saveStateToHistory();
+      graph.nodes = imported.nodes;
+      graph.edges = imported.edges || [];
+      selectedNodeId = undefined;
+      render();
+      renderInspector();
+      print(`Imported workflow: ${graph.nodes.length} nodes, ${graph.edges.length} edges`);
+    } else {
+      print("Error: Invalid workflow JSON format");
+    }
+  } catch (error) {
+    print(`Import error: ${error.message}`);
+  }
+  importFileInput.value = "";
 });
 
 document.getElementById("undo").addEventListener("click", undo);
