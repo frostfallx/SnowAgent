@@ -22,6 +22,20 @@ let selectedNodeId;
 let connectMode = false;
 let connectSourceId;
 
+// Undo/redo history
+const MAX_HISTORY = 50;
+const history = [];
+let historyIndex = -1;
+
+// Pan state
+let panMode = false;
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let panOffsetX = 0;
+let panOffsetY = 0;
+let canvasTransform = { x: 0, y: 0, scale: 1 };
+
 function print(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
@@ -81,6 +95,55 @@ function selectNode(id) {
   render();
 }
 
+function saveStateToHistory() {
+  if (historyIndex < history.length - 1) {
+    history.splice(historyIndex + 1);
+  }
+  history.push(JSON.parse(JSON.stringify(graph)));
+  if (history.length > MAX_HISTORY) {
+    history.shift();
+  } else {
+    historyIndex++;
+  }
+}
+
+function undo() {
+  if (historyIndex > 0) {
+    historyIndex--;
+    graph.nodes = JSON.parse(JSON.stringify(history[historyIndex].nodes));
+    graph.edges = JSON.parse(JSON.stringify(history[historyIndex].edges));
+    selectedNodeId = undefined;
+    connectSourceId = undefined;
+    render();
+    renderInspector();
+    print("Undo");
+  }
+}
+
+function redo() {
+  if (historyIndex < history.length - 1) {
+    historyIndex++;
+    graph.nodes = JSON.parse(JSON.stringify(history[historyIndex].nodes));
+    graph.edges = JSON.parse(JSON.stringify(history[historyIndex].edges));
+    selectedNodeId = undefined;
+    connectSourceId = undefined;
+    render();
+    renderInspector();
+    print("Redo");
+  }
+}
+
+function deleteSelectedNode() {
+  if (!selectedNodeId) return;
+  saveStateToHistory();
+  graph.nodes = graph.nodes.filter((n) => n.id !== selectedNodeId);
+  graph.edges = graph.edges.filter((e) => e.from !== selectedNodeId && e.to !== selectedNodeId);
+  selectedNodeId = undefined;
+  render();
+  renderInspector();
+  print("Node deleted");
+}
+
 function render() {
   canvas.querySelectorAll(".node").forEach((element) => element.remove());
 
@@ -138,6 +201,45 @@ function attachNodeEvents(element, node) {
   });
 }
 
+function handlePanPointerDown(event) {
+  if (event.button === 0 && !event.target.classList.contains("node")) {
+    panMode = true;
+    isPanning = true;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panOffsetX = canvasTransform.x;
+    panOffsetY = canvasTransform.y;
+    canvas.style.cursor = "grabbing";
+  }
+}
+
+function handlePanPointerMove(event) {
+  if (!isPanning) return;
+  const dx = event.clientX - panStartX;
+  const dy = event.clientY - panStartY;
+  canvasTransform.x = panOffsetX + dx;
+  canvasTransform.y = panOffsetY + dy;
+  canvas.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
+}
+
+function handlePanPointerUp(event) {
+  if (isPanning) {
+    isPanning = false;
+    panMode = false;
+    canvas.style.cursor = "default";
+  }
+}
+
+function handleWheel(event) {
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    const scaleAmount = -event.deltaY * 0.001;
+    const newScale = Math.max(0.25, Math.min(2, canvasTransform.scale + scaleAmount));
+    canvasTransform.scale = newScale;
+    canvas.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
+  }
+}
+
 function handleConnectClick(nodeId) {
   if (!connectSourceId) {
     connectSourceId = nodeId;
@@ -158,17 +260,50 @@ function handleConnectClick(nodeId) {
 function renderEdges() {
   edgesSvg.innerHTML = "";
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const nodeRects = new Map();
+  for (const node of graph.nodes) {
+    nodeRects.set(node.id, {
+      x: node.position.x,
+      y: node.position.y,
+      w: 170,
+      h: 78
+    });
+  }
   for (const edge of graph.edges) {
     const from = byId.get(edge.from);
     const to = byId.get(edge.to);
     if (!from || !to) continue;
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("class", "edge-line");
-    line.setAttribute("x1", String(from.position.x + 85));
-    line.setAttribute("y1", String(from.position.y + 39));
-    line.setAttribute("x2", String(to.position.x + 85));
-    line.setAttribute("y2", String(to.position.y + 39));
-    edgesSvg.appendChild(line);
+    const fromRect = nodeRects.get(edge.from);
+    const toRect = nodeRects.get(edge.to);
+    if (!fromRect || !toRect) continue;
+    const start = getEdgeAnchor(fromRect, toRect);
+    const end = getEdgeAnchor(toRect, fromRect);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "edge-path");
+    path.setAttribute("d", `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
+    edgesSvg.appendChild(path);
+  }
+}
+
+function getEdgeAnchor(fromRect, toRect) {
+  const fromCenterX = fromRect.x + fromRect.w / 2;
+  const fromCenterY = fromRect.y + fromRect.h / 2;
+  const toCenterX = toRect.x + toRect.w / 2;
+  const toCenterY = toRect.y + toRect.h / 2;
+  const dx = toCenterX - fromCenterX;
+  const dy = toCenterY - fromCenterY;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  if (absDx >= absDy) {
+    return {
+      x: dx > 0 ? fromRect.x + fromRect.w : fromRect.x,
+      y: fromCenterY
+    };
+  } else {
+    return {
+      x: fromCenterX,
+      y: dy > 0 ? fromRect.y + fromRect.h : fromRect.y
+    };
   }
 }
 
@@ -208,6 +343,7 @@ nodeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const node = selectedNode();
   if (!node) return;
+  saveStateToHistory();
   node.label = nodeForm.elements.label.value;
   if (node.type === "task") {
     node.data = {
@@ -238,9 +374,34 @@ canvas.addEventListener("drop", (event) => {
   event.preventDefault();
   const type = event.dataTransfer.getData("text/plain");
   const rect = canvas.getBoundingClientRect();
-  addNode(type, event.clientX - rect.left, event.clientY - rect.top);
+  const nodeX = (event.clientX - rect.left - canvasTransform.x) / canvasTransform.scale;
+  const nodeY = (event.clientY - rect.top - canvasTransform.y) / canvasTransform.scale;
+  saveStateToHistory();
+  addNode(type, nodeX, nodeY);
 });
 canvas.addEventListener("click", () => selectNode(undefined));
+canvas.addEventListener("dblclick", (event) => {
+  if (event.target === canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const nodeX = (event.clientX - rect.left - canvasTransform.x) / canvasTransform.scale;
+    const nodeY = (event.clientY - rect.top - canvasTransform.y) / canvasTransform.scale;
+    addNode("task", nodeX, nodeY);
+  }
+});
+canvas.addEventListener("keydown", (event) => {
+  if (event.key === "Backspace" || event.key === "Delete") {
+    deleteSelectedNode();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+  }
+});
+canvas.addEventListener("pointerdown", handlePanPointerDown);
+canvas.addEventListener("pointermove", handlePanPointerMove);
+canvas.addEventListener("pointerup", handlePanPointerUp);
+canvas.addEventListener("pointerleave", handlePanPointerUp);
+canvas.addEventListener("wheel", handleWheel);
 
 connectModeButton.addEventListener("click", () => {
   connectMode = !connectMode;
@@ -288,6 +449,10 @@ document.getElementById("saveWorkflow").addEventListener("click", async () => {
   }
 });
 
+function saveAndAddToHistory() {
+  saveStateToHistory();
+}
+
 async function listWorkflows() {
   try {
     const data = await api("/api/workflows");
@@ -318,6 +483,10 @@ async function listWorkflows() {
 document.getElementById("loadWorkflow").addEventListener("click", () => {
   listWorkflows();
 });
+
+document.getElementById("undo").addEventListener("click", undo);
+document.getElementById("redo").addEventListener("click", redo);
+document.getElementById("deleteNode").addEventListener("click", deleteSelectedNode);
 
 api("/api/health")
   .then((health) => {
