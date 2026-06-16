@@ -12,7 +12,8 @@ import { Router } from "../core/router";
 import { AGENT_NAMES, AgentName, TASK_TYPES, Task } from "../core/task";
 import { ProcessRunner } from "../process/process-runner";
 import { Logger } from "../utils/logger";
-import { previewWorkflowGraph } from "./workflow";
+import { ensureDir, writeJsonFile } from "../utils/fs";
+import { WorkflowGraph, previewWorkflowGraph } from "./workflow";
 
 interface WebContext {
   cwd: string;
@@ -196,6 +197,76 @@ function asTaskPayload(value: unknown, cwd: string): Task {
   };
 }
 
+function workflowStoreDir(context: WebContext): string {
+  return ensureDir(path.resolve(context.cwd, context.config.artifacts.rootDir, "workflows"));
+}
+
+function sanitizeWorkflowId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/gu, "-").slice(0, 120) || `workflow-${Date.now()}`;
+}
+
+function workflowPath(context: WebContext, workflowId: string): string {
+  return path.join(workflowStoreDir(context), `${sanitizeWorkflowId(workflowId)}.json`);
+}
+
+function listSavedWorkflows(context: WebContext): Array<{
+  id: string;
+  name?: string;
+  path: string;
+  updatedAt: string;
+  nodeCount: number;
+  edgeCount: number;
+}> {
+  const dir = workflowStoreDir(context);
+  return fs.readdirSync(dir)
+    .filter((fileName) => fileName.endsWith(".json"))
+    .map((fileName) => {
+      const filePath = path.join(dir, fileName);
+      const stats = fs.statSync(filePath);
+      try {
+        const graph = JSON.parse(fs.readFileSync(filePath, "utf8")) as WorkflowGraph;
+        return {
+          id: graph.id ?? path.basename(fileName, ".json"),
+          name: graph.name,
+          path: filePath,
+          updatedAt: stats.mtime.toISOString(),
+          nodeCount: Array.isArray(graph.nodes) ? graph.nodes.length : 0,
+          edgeCount: Array.isArray(graph.edges) ? graph.edges.length : 0
+        };
+      } catch {
+        return {
+          id: path.basename(fileName, ".json"),
+          path: filePath,
+          updatedAt: stats.mtime.toISOString(),
+          nodeCount: 0,
+          edgeCount: 0
+        };
+      }
+    })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function loadWorkflow(context: WebContext, workflowId: string): WorkflowGraph | undefined {
+  const filePath = workflowPath(context, workflowId);
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as WorkflowGraph;
+}
+
+function saveWorkflow(context: WebContext, graph: WorkflowGraph): { id: string; path: string; graph: WorkflowGraph } {
+  const id = sanitizeWorkflowId(graph.id ?? `workflow-${Date.now()}`);
+  const normalizedGraph: WorkflowGraph = {
+    id,
+    name: graph.name,
+    nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+    edges: Array.isArray(graph.edges) ? graph.edges : []
+  };
+  const filePath = workflowPath(context, id);
+  writeJsonFile(filePath, normalizedGraph);
+  return { id, path: filePath, graph: normalizedGraph };
+}
+
 async function handleApi(
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -229,6 +300,35 @@ async function handleApi(
       return;
     }
     sendJson(response, 200, await context.registry.detect(agentName ? [agentName] : undefined));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/workflows") {
+    sendJson(response, 200, {
+      workflows: listSavedWorkflows(context)
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname.startsWith("/api/workflows/")) {
+    const workflowId = decodeURIComponent(url.pathname.slice("/api/workflows/".length));
+    const graph = loadWorkflow(context, workflowId);
+    if (!graph) {
+      sendJson(response, 404, { error: "Workflow not found." });
+      return;
+    }
+    sendJson(response, 200, graph);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/workflows") {
+    const body = await readJsonBody(request);
+    const graph = body && typeof body === "object" ? body as WorkflowGraph : { nodes: [], edges: [] };
+    const saved = saveWorkflow(context, graph);
+    sendJson(response, 200, {
+      ...saved,
+      preview: previewWorkflowGraph(saved.graph, context.cwd)
+    });
     return;
   }
 

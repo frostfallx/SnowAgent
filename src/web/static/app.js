@@ -7,6 +7,9 @@ const inspectorEmpty = document.getElementById("inspectorEmpty");
 const taskFields = document.getElementById("taskFields");
 const agentFields = document.getElementById("agentFields");
 const connectModeButton = document.getElementById("connectMode");
+const saveWorkflowButton = document.getElementById("saveWorkflow");
+const loadWorkflowButton = document.getElementById("loadWorkflow");
+const workflowListEl = document.getElementById("workflowList");
 
 const graph = {
   id: `workflow-${Date.now()}`,
@@ -275,6 +278,47 @@ document.getElementById("detectAgents").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("saveWorkflow").addEventListener("click", async () => {
+  try {
+    const saved = await api("/api/workflows", { method: "POST", body: JSON.stringify(graph) });
+    print(`Saved workflow: ${saved.name || saved.id}\nNodes: ${saved.graph.nodes.length}\nEdges: ${saved.graph.edges.length}`);
+    listWorkflows();
+  } catch (error) {
+    print(String(error));
+  }
+});
+
+async function listWorkflows() {
+  try {
+    const data = await api("/api/workflows");
+    workflowListEl.innerHTML = "";
+    for (const wf of data.workflows) {
+      const item = document.createElement("button");
+      item.className = "workflow-item";
+      item.textContent = `${wf.name || wf.id} (${wf.nodeCount} nodes, ${wf.edgeCount} edges)`;
+      item.title = `Updated: ${wf.updatedAt}\nPath: ${wf.path}`;
+      item.addEventListener("click", async () => {
+        const graphData = await api(`/api/workflows/${encodeURIComponent(wf.id)}`);
+        graph.id = graphData.id;
+        graph.name = graphData.name;
+        graph.nodes = graphData.nodes;
+        graph.edges = graphData.edges;
+        selectedNodeId = undefined;
+        render();
+        renderInspector();
+        print(`Loaded workflow: ${graphData.name || graphData.id}`);
+      });
+      workflowListEl.appendChild(item);
+    }
+  } catch (error) {
+    print(String(error));
+  }
+}
+
+document.getElementById("loadWorkflow").addEventListener("click", () => {
+  listWorkflows();
+});
+
 api("/api/health")
   .then((health) => {
     statusEl.textContent = `online · ${health.cwd}`;
@@ -282,6 +326,7 @@ api("/api/health")
     addNode("agent", 390, 150);
     graph.edges.push({ id: "edge-initial", from: graph.nodes[0].id, to: graph.nodes[1].id });
     render();
+    listWorkflows();
   })
   .catch((error) => {
     statusEl.textContent = "offline";
