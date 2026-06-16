@@ -12,6 +12,7 @@ const loadWorkflowButton = document.getElementById("loadWorkflow");
 const exportWorkflowButton = document.getElementById("exportWorkflow");
 const importWorkflowButton = document.getElementById("importWorkflow");
 const importFileInput = document.getElementById("importFileInput");
+const autoLayoutButton = document.getElementById("autoLayout");
 const workflowListEl = document.getElementById("workflowList");
 
 const graph = {
@@ -528,6 +529,79 @@ importFileInput.addEventListener("change", async (event) => {
   importFileInput.value = "";
 });
 
+function autoLayout() {
+  saveStateToHistory();
+
+  const nodeWidth = 170;
+  const nodeHeight = 78;
+  const horizGap = 60;
+  const vertGap = 40;
+
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const incomingEdges = new Map(graph.nodes.map((n) => [n.id, 0]));
+  const levelMap = new Map();
+
+  for (const edge of graph.edges) {
+    incomingEdges.set(edge.to, (incomingEdges.get(edge.to) || 0) + 1);
+  }
+
+  let currentLevel = 0;
+  let queue = graph.nodes.filter((n) => (incomingEdges.get(n.id) || 0) === 0);
+  const nextQueue = [];
+
+  while (queue.length > 0) {
+    for (const node of queue) {
+      levelMap.set(node.id, currentLevel);
+    }
+    for (const edge of graph.edges) {
+      const fromNode = nodeById.get(edge.from);
+      if (fromNode && levelMap.has(edge.from) && levelMap.get(edge.from) === currentLevel) {
+        nextQueue.push(nodeById.get(edge.to));
+      }
+    }
+    queue = nextQueue.splice(0);
+    currentLevel++;
+  }
+
+  const levelNodes = new Map();
+  for (const [nodeId, level] of levelMap) {
+    if (!levelNodes.has(level)) {
+      levelNodes.set(level, []);
+    }
+    levelNodes.get(level).push(nodeById.get(nodeId));
+  }
+
+  let maxNodesInLevel = 0;
+  for (const nodes of levelNodes.values()) {
+    if (nodes.length > maxNodesInLevel) {
+      maxNodesInLevel = nodes.length;
+    }
+  }
+
+  const startX = 80;
+  const startY = 80;
+  const totalWidth = (maxNodesInLevel * (nodeWidth + horizGap)) - horizGap;
+  const xStart = Math.max(0, (canvas.clientWidth - totalWidth) / 2);
+
+  let levelY = startY;
+  for (const [level, nodes] of levelNodes) {
+    const levelWidth = (nodes.length * (nodeWidth + horizGap)) - horizGap;
+    const levelXStart = Math.max(0, (canvas.clientWidth - levelWidth) / 2);
+
+    for (let i = 0; i < nodes.length; i++) {
+      nodes[i].position = {
+        x: levelXStart + i * (nodeWidth + horizGap),
+        y: levelY
+      };
+    }
+    levelY += nodeHeight + vertGap;
+  }
+
+  render();
+  print(`Auto-layout applied: ${levelNodes.size} levels`);
+}
+
+document.getElementById("autoLayout").addEventListener("click", autoLayout);
 document.getElementById("undo").addEventListener("click", undo);
 document.getElementById("redo").addEventListener("click", redo);
 document.getElementById("deleteNode").addEventListener("click", deleteSelectedNode);
