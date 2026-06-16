@@ -48,13 +48,14 @@ p { margin: 6px 0 0; color: var(--muted); }
   grid-template-columns: 230px 1fr 360px;
 }
 
-.palette, .inspector {
+.palette, .inspector, .history {
   padding: 16px;
   overflow: auto;
   background: var(--panel);
 }
 .palette { border-right: 1px solid var(--line); }
 .inspector { border-left: 1px solid var(--line); }
+.history { border-left: 1px solid var(--line); }
 
 button, input, select, textarea {
   width: 100%;
@@ -158,4 +159,46 @@ pre {
   padding: 12px;
   background: #0b1020;
   color: #dbeafe;
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+}
+.history h2 {
+  margin-top: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+#historyList {
+  flex: 1;
+  overflow-y: auto;
+}
+.history-item {
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.history-item .history-time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.history-item .history-status {
+  font-weight: 700;
+  margin-top: 4px;
+}
+.history-item .history-agent {
+  color: var(--accent);
+  margin-top: 4px;
+}
+.history-item .history-duration {
+  color: var(--accent-2);
+  margin-top: 2px;
+}
+.history-item .history-title {
+  margin-top: 4px;
+  color: var(--text);
 }

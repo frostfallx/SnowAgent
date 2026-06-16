@@ -13,7 +13,9 @@ const exportWorkflowButton = document.getElementById("exportWorkflow");
 const importWorkflowButton = document.getElementById("importWorkflow");
 const importFileInput = document.getElementById("importFileInput");
 const autoLayoutButton = document.getElementById("autoLayout");
+const clearHistoryButton = document.getElementById("clearHistory");
 const workflowListEl = document.getElementById("workflowList");
+const historyListEl = document.getElementById("historyList");
 
 const graph = {
   id: `workflow-${Date.now()}`,
@@ -429,9 +431,12 @@ document.getElementById("dryRunTask").addEventListener("click", async () => {
       print(preview);
       return;
     }
-    print(await api("/api/run", { method: "POST", body: JSON.stringify({ task: preview.task, dryRun: true }) }));
+    const result = await api("/api/run", { method: "POST", body: JSON.stringify({ task: preview.task, dryRun: true }) });
+    print(result);
+    addHistoryLog(result);
   } catch (error) {
     print(String(error));
+    addHistoryLog({ success: false, error: String(error) });
   }
 });
 
@@ -601,7 +606,60 @@ function autoLayout() {
   print(`Auto-layout applied: ${levelNodes.size} levels`);
 }
 
-document.getElementById("autoLayout").addEventListener("click", autoLayout);
+const historyLogs = [];
+
+function addHistoryLog(result) {
+  const time = new Date().toLocaleString("zh-CN");
+  let statusClass = "success";
+  let statusText = "成功";
+  if (!result.success || result.exitCode !== 0) {
+    statusClass = "failed";
+    statusText = "失败";
+  }
+
+  const duration = result.durationMs ? `${result.durationMs}ms` : "N/A";
+  const agent = result.agentName || result.agent || "unknown";
+
+  const item = {
+    time,
+    status: statusText,
+    statusClass,
+    agent,
+    duration,
+    title: result.task?.title || result.taskId || "Task",
+    output: result.stdout?.substring(0, 200) || "",
+    fullResult: result
+  };
+
+  historyLogs.push(item);
+  renderHistory();
+}
+
+function renderHistory() {
+  historyListEl.innerHTML = "";
+  for (const log of historyLogs.slice().reverse()) {
+    const div = document.createElement("div");
+    div.className = "history-item";
+    div.innerHTML = `
+      <div class="history-time">${log.time}</div>
+      <div class="history-status ${log.statusClass}">${log.status}</div>
+      <div class="history-agent">Agent: ${log.agent}</div>
+      <div class="history-duration">耗时: ${log.duration}</div>
+      <div class="history-title">任务: ${log.title}</div>
+    `;
+    div.addEventListener("click", () => {
+      print(JSON.stringify(log.fullResult, null, 2));
+    });
+    historyListEl.appendChild(div);
+  }
+}
+
+document.getElementById("clearHistory").addEventListener("click", () => {
+  historyLogs.length = 0;
+  renderHistory();
+  print("History cleared");
+});
+
 document.getElementById("undo").addEventListener("click", undo);
 document.getElementById("redo").addEventListener("click", redo);
 document.getElementById("deleteNode").addEventListener("click", deleteSelectedNode);
