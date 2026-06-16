@@ -2241,6 +2241,183 @@ program
     }
   );
 
+program
+  .command("workflow")
+  .description("Manage and run workflows saved from the web UI.")
+  .action(() => {
+    program.help();
+  });
+
+program
+  .command("workflow-list")
+  .description("List saved workflows from the artifacts/workflows directory.")
+  .option("--cwd <path>", "Base working directory.", process.cwd())
+  .option("--json", "Print JSON output.")
+  .action((options: { cwd: string; json?: boolean }) => {
+    const cwd = path.resolve(options.cwd);
+    const workflowsDir = path.resolve(cwd, "artifacts", "workflows");
+
+    if (!fs.existsSync(workflowsDir)) {
+      if (options.json) {
+        printJson({ workflows: [], rootDir: workflowsDir });
+      } else {
+        console.log(`rootDir: ${workflowsDir}`);
+        console.log("No workflows directory found.");
+      }
+      return;
+    }
+
+    const files = fs.readdirSync(workflowsDir).filter((f) => f.endsWith(".json"));
+    const workflows = files.map((file) => {
+      const filePath = path.join(workflowsDir, file);
+      const stats = fs.statSync(filePath);
+      try {
+        const content = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        return {
+          id: content.id ?? path.basename(file, ".json"),
+          name: content.name,
+          nodeCount: Array.isArray(content.nodes) ? content.nodes.length : 0,
+          edgeCount: Array.isArray(content.edges) ? content.edges.length : 0,
+          path: filePath,
+          updatedAt: stats.mtime.toISOString()
+        };
+      } catch {
+        return {
+          id: path.basename(file, ".json"),
+          name: undefined,
+          nodeCount: 0,
+          edgeCount: 0,
+          path: filePath,
+          updatedAt: stats.mtime.toISOString()
+        };
+      }
+    }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+    if (options.json) {
+      printJson({ workflows, rootDir: workflowsDir });
+    } else {
+      console.log(`rootDir: ${workflowsDir}`);
+      console.log(`count: ${workflows.length}`);
+      for (const wf of workflows) {
+        console.log(`${wf.name ?? wf.id}: ${wf.nodeCount} nodes, ${wf.edgeCount} edges`);
+        console.log(`  path: ${wf.path}`);
+        console.log(`  updatedAt: ${wf.updatedAt}`);
+      }
+    }
+  });
+
+program
+  .command("workflow-run")
+  .description("Run a saved workflow from artifacts/workflows directory.")
+  .requiredOption("--id <id>", "Workflow ID (filename without .json extension).")
+  .option("--cwd <path>", "Base working directory.", process.cwd())
+  .option("--dry-run", "Build commands and orchestration flow without launching agent processes.")
+  .option("--preflight", "Run preflight before workflow execution and stop on blocked status.")
+  .option(
+    "--skip-preflight-detect",
+    "When using --preflight, skip live agent detection and only inspect config/routing."
+  )
+  .option(
+    "--fail-on-preflight-warning",
+    "When using --preflight, also stop when preflight status is warning."
+  )
+  .option("-c, --config <path>", "Path to a JSON/YAML config file.")
+  .option("--json", "Print JSON output.")
+  .action(async (options: {
+    id: string;
+    cwd: string;
+    dryRun?: boolean;
+    preflight?: boolean;
+    skipPreflightDetect?: boolean;
+    failOnPreflightWarning?: boolean;
+    config?: string;
+    json?: boolean;
+  }) => {
+    const cwd = path.resolve(options.cwd);
+    const context = createContext(options.config, cwd, Boolean(options.json));
+    const workflowPath = path.resolve(cwd, "artifacts", "workflows", `${options.id}.json`);
+
+    if (!fs.existsSync(workflowPath)) {
+      throw new Error(`Workflow not found: ${workflowPath}`);
+    }
+
+    const content = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
+    const nodes = Array.isArray(content.nodes) ? content.nodes : [];
+    const edges = Array.isArray(content.edges) ? content.edges : [];
+
+    const taskNodes = nodes.filter((n: any) => n.type === "task");
+    if (taskNodes.length === 0) {
+      throw new Error("Workflow contains no task nodes.");
+    }
+
+    const taskNode = taskNodes[0];
+    const taskType = taskNode.data?.taskType ?? "summarize";
+    if (!TASK_TYPES.includes(taskType)) {
+      throw new Error(`Invalid task type: ${taskType}`);
+    }
+
+    const task = {
+      id: taskNode.id ?? randomUUID(),
+      type: taskType as any,
+      title: taskNode.data?.title ?? "Workflow task",
+      prompt: taskNode.data?.prompt ?? "",
+      cwd: path.resolve(cwd, taskNode.data?.cwd ?? "."),
+      preferredAgent: taskNode.data?.preferredAgent ?? "auto",
+      fallbackAgents: Array.isArray(taskNode.data?.fallbackAgents)
+        ? taskNode.data?.fallbackAgents
+        : [],
+      timeoutMs: taskNode.data?.timeoutMs
+    };
+
+    const preflight = options.preflight
+      ? await context.preflight.inspectTask(task, {
+          includeDetection: !options.skipPreflightDetect,
+          artifactCwd: cwd
+        })
+      : undefined;
+
+    if (preflight && shouldStopForPreflight(preflight.status, Boolean(options.failOnPreflightWarning))) {
+      const output = {
+        workflowId: options.id,
+        workflowPath,
+        preflight,
+        skipped: true,
+        skipReason:
+          preflight.status === "blocked"
+            ? "Workflow execution was skipped because preflight status is blocked."
+            : "Workflow execution was skipped because preflight status is warning and fail-on-preflight-warning is enabled."
+      };
+
+      if (options.json) {
+        printJson(output);
+      } else {
+        console.log(`workflowId: ${options.id}`);
+        console.log(`workflowPath: ${workflowPath}`);
+        printPreflightSummary(preflight);
+        console.log(`skipReason: ${output.skipReason}`);
+      }
+
+      process.exitCode = 1;
+      return;
+    }
+
+    const result = await context.orchestrator.run(task, {
+      dryRun: Boolean(options.dryRun)
+    });
+
+    if (options.json) {
+      printJson({ workflowId: options.id, workflowPath, preflight, result });
+      return;
+    }
+
+    console.log(`workflowId: ${options.id}`);
+    console.log(`workflowPath: ${workflowPath}`);
+    if (preflight) {
+      printPreflightSummary(preflight);
+    }
+    printOrchestrationResult(result);
+  });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(message);
