@@ -13,6 +13,8 @@ const exportWorkflowButton = document.getElementById("exportWorkflow");
 const importWorkflowButton = document.getElementById("importWorkflow");
 const importFileInput = document.getElementById("importFileInput");
 const autoLayoutButton = document.getElementById("autoLayout");
+const copyNodeButton = document.getElementById("copyNode");
+const duplicateNodeButton = document.getElementById("duplicateNode");
 const clearHistoryButton = document.getElementById("clearHistory");
 const workflowListEl = document.getElementById("workflowList");
 const historyListEl = document.getElementById("historyList");
@@ -41,6 +43,10 @@ let panStartY = 0;
 let panOffsetX = 0;
 let panOffsetY = 0;
 let canvasTransform = { x: 0, y: 0, scale: 1 };
+
+// Clipboard for copy/paste
+let clipboardNodes = [];
+let clipboardEdges = [];
 
 function print(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -148,6 +154,95 @@ function deleteSelectedNode() {
   render();
   renderInspector();
   print("Node deleted");
+}
+
+function copySelectedNode() {
+  if (!selectedNodeId) {
+    print("No node selected");
+    return;
+  }
+  const node = graph.nodes.find((n) => n.id === selectedNodeId);
+  if (!node) return;
+
+  clipboardNodes = [JSON.parse(JSON.stringify(node))];
+  clipboardEdges = graph.edges.filter(
+    (e) => e.from === selectedNodeId || e.to === selectedNodeId
+  );
+  print(`Copied node: ${nodeLabel(node)}`);
+}
+
+function duplicateSelectedNode() {
+  if (!selectedNodeId) {
+    print("No node selected");
+    return;
+  }
+  saveStateToHistory();
+
+  const node = graph.nodes.find((n) => n.id === selectedNodeId);
+  if (!node) return;
+
+  const newId = `${node.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const newNode = JSON.parse(JSON.stringify(node));
+  newNode.id = newId;
+  newNode.position = {
+    x: node.position.x + 30,
+    y: node.position.y + 30
+  };
+
+  graph.nodes.push(newNode);
+
+  // Update clipboard for potential paste
+  clipboardNodes = [newNode];
+
+  selectedNodeId = newId;
+  render();
+  renderInspector();
+  print(`Duplicated node: ${nodeLabel(node)}`);
+}
+
+function pasteNodes() {
+  if (clipboardNodes.length === 0) {
+    print("Clipboard is empty");
+    return;
+  }
+  saveStateToHistory();
+
+  const offset = { x: 20, y: 20 };
+  const newIds = new Map();
+
+  // First pass: create all nodes with new IDs
+  for (const clipboardNode of clipboardNodes) {
+    const newId = `${clipboardNode.type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const newNode = JSON.parse(JSON.stringify(clipboardNode));
+    newNode.id = newId;
+    newNode.position = {
+      x: clipboardNode.position.x + offset.x,
+      y: clipboardNode.position.y + offset.y
+    };
+    graph.nodes.push(newNode);
+    newIds.set(clipboardNode.id, newId);
+  }
+
+  // Second pass: update edge references to use new node IDs
+  for (const clipboardEdge of clipboardEdges) {
+    const fromId = newIds.get(clipboardEdge.from);
+    const toId = newIds.get(clipboardEdge.to);
+    if (fromId && toId) {
+      graph.edges.push({
+        id: `edge-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        from: fromId,
+        to: toId
+      });
+    }
+  }
+
+  // Select the first pasted node
+  if (graph.nodes.length > 0) {
+    selectedNodeId = graph.nodes[graph.nodes.length - 1].id;
+  }
+  render();
+  renderInspector();
+  print(`Pasted ${clipboardNodes.length} node(s)`);
 }
 
 function render() {
@@ -401,6 +496,15 @@ canvas.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (event.shiftKey) redo();
     else undo();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === "c") {
+    event.preventDefault();
+    copySelectedNode();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === "v") {
+    event.preventDefault();
+    pasteNodes();
+  } else if ((event.ctrlKey || event.metaKey) && event.key === "d") {
+    event.preventDefault();
+    duplicateSelectedNode();
   }
 });
 canvas.addEventListener("pointerdown", handlePanPointerDown);
@@ -663,6 +767,8 @@ document.getElementById("clearHistory").addEventListener("click", () => {
 document.getElementById("undo").addEventListener("click", undo);
 document.getElementById("redo").addEventListener("click", redo);
 document.getElementById("deleteNode").addEventListener("click", deleteSelectedNode);
+document.getElementById("copyNode").addEventListener("click", copySelectedNode);
+document.getElementById("duplicateNode").addEventListener("click", duplicateSelectedNode);
 
 api("/api/health")
   .then((health) => {
