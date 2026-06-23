@@ -48,6 +48,9 @@ let canvasTransform = { x: 0, y: 0, scale: 1 };
 let clipboardNodes = [];
 let clipboardEdges = [];
 
+// Edge selection state
+let selectedEdgeId = undefined;
+
 function print(value) {
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
@@ -245,6 +248,24 @@ function pasteNodes() {
   print(`Pasted ${clipboardNodes.length} node(s)`);
 }
 
+function deleteSelectedEdge() {
+  if (!selectedEdgeId) {
+    print("No edge selected. Click an edge to select it, then press Delete.");
+    return;
+  }
+  saveStateToHistory();
+  graph.edges = graph.edges.filter((e) => e.id !== selectedEdgeId);
+  selectedEdgeId = undefined;
+  render();
+  print("Edge deleted");
+}
+
+function renderWorkflowInfo() {
+  const infoEl = document.getElementById("workflowInfo");
+  if (!infoEl) return;
+  infoEl.textContent = `Nodes: ${graph.nodes.length} | Edges: ${graph.edges.length} | ${graph.name || "Untitled"}`;
+}
+
 function render() {
   canvas.querySelectorAll(".node").forEach((element) => element.remove());
 
@@ -262,6 +283,7 @@ function render() {
   }
 
   renderEdges();
+  renderWorkflowInfo();
 }
 
 function attachNodeEvents(element, node) {
@@ -491,7 +513,11 @@ canvas.addEventListener("dblclick", (event) => {
 });
 canvas.addEventListener("keydown", (event) => {
   if (event.key === "Backspace" || event.key === "Delete") {
-    deleteSelectedNode();
+    if (selectedEdgeId) {
+      deleteSelectedEdge();
+    } else {
+      deleteSelectedNode();
+    }
   } else if ((event.ctrlKey || event.metaKey) && event.key === "z") {
     event.preventDefault();
     if (event.shiftKey) redo();
@@ -767,6 +793,7 @@ document.getElementById("clearHistory").addEventListener("click", () => {
 document.getElementById("undo").addEventListener("click", undo);
 document.getElementById("redo").addEventListener("click", redo);
 document.getElementById("deleteNode").addEventListener("click", deleteSelectedNode);
+document.getElementById("deleteEdge").addEventListener("click", deleteSelectedEdge);
 document.getElementById("copyNode").addEventListener("click", copySelectedNode);
 document.getElementById("duplicateNode").addEventListener("click", duplicateSelectedNode);
 
